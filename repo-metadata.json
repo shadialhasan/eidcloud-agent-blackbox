@@ -1,0 +1,12 @@
+{
+  "description": "Immutable tamper-evident AI agent flight recorder and crash forensics engine with Merkle hash-chaining in pure PHP",
+  "topics": [
+    "eidcloud",
+    "agent-blackbox",
+    "flight-recorder",
+    "ai-audit",
+    "tamper-evident",
+    "agent-forensics",
+    "php8"
+  ]
+}

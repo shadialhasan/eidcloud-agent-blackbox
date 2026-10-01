@@ -1,0 +1,12 @@
+/vendor/
+composer.lock
+.phpunit.result.cache
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.tmp
+incident.html
+flight.log
+flight_tampered.log

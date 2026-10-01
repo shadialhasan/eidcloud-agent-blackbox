@@ -1,0 +1,33 @@
+{
+  "name": "eidcloud/agent-blackbox",
+  "description": "Immutable tamper-evident AI agent flight recorder and crash forensics engine with Merkle hash-chaining in pure PHP",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Eng. MHD. Shadi AL-Hasan",
+      "email": "shadi@eidcloud.com",
+      "homepage": "https://github.com/eidcloud"
+    }
+  ],
+  "require": {
+    "php": ">=8.2"
+  },
+  "autoload": {
+    "psr-4": {
+      "EidCloud\\AgentBlackbox\\": "src/"
+    }
+  },
+  "bin": [
+    "bin/eidcloud-blackbox"
+  ],
+  "keywords": [
+    "eidcloud",
+    "agent-blackbox",
+    "flight-recorder",
+    "ai-audit",
+    "tamper-evident",
+    "agent-forensics",
+    "php8"
+  ]
+}

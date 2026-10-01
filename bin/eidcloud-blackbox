@@ -1,0 +1,188 @@
+<?php
+
+declare(strict_types=1);
+
+spl_autoload_register(function ($class) {
+    $prefix = 'EidCloud\\AgentBlackbox\\';
+    $baseDir = __DIR__ . '/../src/';
+
+    $len = strlen($prefix);
+    if (strncmp($prefix, $class, $len) !== 0) {
+        return;
+    }
+
+    $relativeClass = substr($class, $len);
+    $file = $baseDir . str_replace('\\', '/', $relativeClass) . '.php';
+
+    if (file_exists($file)) {
+        require_once $file;
+    }
+});
+
+use EidCloud\AgentBlackbox\Blackbox;
+use EidCloud\AgentBlackbox\Chain\MerkleChain;
+use EidCloud\AgentBlackbox\Forensics\CrashAnalyzer;
+use EidCloud\AgentBlackbox\Reports\HtmlIncidentReport;
+
+$argv = $_SERVER['argv'] ?? [];
+$script = array_shift($argv);
+$command = $argv[0] ?? null;
+
+function printUsage(): void {
+    echo <<<HELP
+⬛ EidCloud Agent Black Box CLI (v1.0.0)
+Immutable Tamper-Evident Flight Recorder & Crash Forensics Engine
+
+Usage:
+  php bin/eidcloud-blackbox <command> [arguments] [options]
+
+Commands:
+  inspect <flight.log>                 Inspect events summary and execution telemetry
+  verify <flight.log>                  Verify cryptographic SHA-256 Merkle chain integrity
+  incident-report <flight.log>         Generate forensic crash report and export HTML
+    --html=<path>                      Optional destination path for HTML report
+
+Options:
+  -h, --help                           Show this help message and exit
+  -v, --version                        Show version info
+
+Examples:
+  php bin/eidcloud-blackbox inspect flight.log
+  php bin/eidcloud-blackbox verify flight.log
+  php bin/eidcloud-blackbox incident-report flight.log --html=incident.html
+
+HELP;
+}
+
+if ($command === null || in_array($command, ['-h', '--help', 'help'], true)) {
+    printUsage();
+    exit(0);
+}
+
+if (in_array($command, ['-v', '--version', 'version'], true)) {
+    echo "EidCloud Agent Black Box v1.0.0 (PHP " . PHP_VERSION . ")\n";
+    exit(0);
+}
+
+switch ($command) {
+    case 'inspect':
+        $file = $argv[1] ?? null;
+        if (!$file) {
+            fwrite(STDERR, "Error: Missing flight log file path.\nUsage: php bin/eidcloud-blackbox inspect <flight.log>\n");
+            exit(1);
+        }
+        try {
+            $events = Blackbox::loadFlightLog($file);
+            $analysis = CrashAnalyzer::analyze($events);
+            echo "=========================================================\n";
+            echo "⬛ EidCloud Agent Flight Recorder Inspection\n";
+            echo "=========================================================\n";
+            echo "Log File:        " . realpath($file) . "\n";
+            echo "Total Events:    " . count($events) . "\n";
+            echo "Duration:        " . $analysis['execution_duration_ms'] . " ms\n";
+            echo "Total Tokens:    " . $analysis['total_tokens']['total'] . " (Prompt: " . $analysis['total_tokens']['prompt'] . ", Completion: " . $analysis['total_tokens']['completion'] . ")\n";
+            echo "Status:          " . ($analysis['has_crash'] ? "CRASH DETECTED" : "COMPLETED NORMALLY") . "\n";
+            echo "---------------------------------------------------------\n";
+            echo "Event Distribution:\n";
+            foreach ($analysis['event_counts'] as $type => $count) {
+                printf("  - %-24s : %d\n", $type, $count);
+            }
+            if ($analysis['has_crash'] && $analysis['fatal_event']) {
+                echo "---------------------------------------------------------\n";
+                echo "CRASH DETAILS:\n";
+                echo "  Root Cause:    " . $analysis['root_cause'] . "\n";
+                echo "  Sequence:      #" . $analysis['fatal_event']['sequence'] . "\n";
+                if ($analysis['culprit_tool']) {
+                    echo "  Culprit Tool:  " . $analysis['culprit_tool']['tool'] . "\n";
+                }
+            }
+            echo "=========================================================\n";
+            exit(0);
+        } catch (Throwable $e) {
+            fwrite(STDERR, "Error: " . $e->getMessage() . "\n");
+            exit(1);
+        }
+
+    case 'verify':
+        $file = $argv[1] ?? null;
+        if (!$file) {
+            fwrite(STDERR, "Error: Missing flight log file path.\nUsage: php bin/eidcloud-blackbox verify <flight.log>\n");
+            exit(1);
+        }
+        try {
+            $events = Blackbox::loadFlightLog($file);
+            $result = MerkleChain::verifyChain($events);
+
+            echo "=========================================================\n";
+            echo "⬛ Cryptographic SHA-256 Merkle Chain Verification\n";
+            echo "=========================================================\n";
+            echo "Log File:        " . realpath($file) . "\n";
+            echo "Events Checked:  " . count($events) . "\n";
+
+            if ($result['valid']) {
+                echo "Status:          VERIFIED [Tamper-Evident Integrity INTACT]\n";
+                echo "All events match cryptographic hash lineage back to genesis.\n";
+                echo "=========================================================\n";
+                exit(0);
+            } else {
+                echo "Status:          FAILED [Tampering or Corruption Detected]\n";
+                echo "Error:           " . $result['error'] . "\n";
+                echo "Broken Sequence: #" . ($result['broken_at_sequence'] ?? 'N/A') . "\n";
+                echo "Broken Event ID: " . ($result['broken_event_id'] ?? 'N/A') . "\n";
+                echo "=========================================================\n";
+                exit(2);
+            }
+        } catch (Throwable $e) {
+            fwrite(STDERR, "Error: " . $e->getMessage() . "\n");
+            exit(1);
+        }
+
+    case 'incident-report':
+        $file = $argv[1] ?? null;
+        if (!$file) {
+            fwrite(STDERR, "Error: Missing flight log file path.\nUsage: php bin/eidcloud-blackbox incident-report <flight.log> [--html=<path>]\n");
+            exit(1);
+        }
+
+        $htmlPath = null;
+        for ($i = 2; $i < count($argv); $i++) {
+            if (str_starts_with($argv[$i], '--html=')) {
+                $htmlPath = substr($argv[$i], 7);
+            }
+        }
+
+        try {
+            $events = Blackbox::loadFlightLog($file);
+            $analysis = CrashAnalyzer::analyze($events);
+            $verification = MerkleChain::verifyChain($events);
+
+            echo "=========================================================\n";
+            echo "⬛ Forensic Incident Investigation Summary\n";
+            echo "=========================================================\n";
+            echo "Incident Status: " . ($analysis['has_crash'] ? "CRITICAL FAILURE" : "HEALTHY EXECUTION") . "\n";
+            echo "Chain Integrity: " . ($verification['valid'] ? "AUTHENTIC" : "CORRUPTED") . "\n";
+
+            if ($analysis['has_crash']) {
+                echo "Root Cause:      " . $analysis['root_cause'] . "\n";
+                if ($analysis['culprit_tool']) {
+                    echo "Culprit Tool:    " . $analysis['culprit_tool']['tool'] . "\n";
+                    echo "Arguments:       " . json_encode($analysis['culprit_tool']['arguments']) . "\n";
+                }
+            }
+
+            if ($htmlPath !== null) {
+                $html = HtmlIncidentReport::generate($events, "Incident Report: " . basename($file));
+                file_put_contents($htmlPath, $html);
+                echo "Exported HTML:   " . realpath($htmlPath) . "\n";
+            }
+            echo "=========================================================\n";
+            exit(0);
+        } catch (Throwable $e) {
+            fwrite(STDERR, "Error: " . $e->getMessage() . "\n");
+            exit(1);
+        }
+
+    default:
+        fwrite(STDERR, "Error: Unknown command '{$command}'. Run with --help for options.\n");
+        exit(1);
+}
